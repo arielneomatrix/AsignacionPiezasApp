@@ -4,17 +4,28 @@ using Microsoft.Data.Sqlite;
 
 namespace AsignacionPiezasApp.Services
 {
+
+
     public static class Database
     {
         public static string BaseDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AsignacionPiezasApp");
         public static string DbPath => Path.Combine(BaseDir, "asignacion.db");
         public static string FotosDir => Path.Combine(BaseDir, "Fotos");
+        // NUEVO: carpeta base para informes (en Documentos, no en AppData)
+        public static string ReportsRoot => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            "AsignacionPiezas",
+            "Informes"
+        );
+
         public static string ConnectionString => $"Data Source={DbPath};Cache=Shared";
 
         public static void Initialize()
         {
             Directory.CreateDirectory(BaseDir);
             Directory.CreateDirectory(FotosDir);
+            Directory.CreateDirectory(ReportsRoot); // NUEVO
+
 
             bool firstTime = !File.Exists(DbPath);
             using var conn = new SqliteConnection(ConnectionString);

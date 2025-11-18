@@ -11,7 +11,17 @@ namespace AsignacionPiezasApp.Services
     /// Integra: Usuarios (username), Estatus y Piezas.
     /// </summary>
     /// 
-   
+    // NUEVO: criterios de orden para informes
+    public enum ReportOrderBy
+    {
+        Codigo,
+        Descripcion,
+        Usuario,
+        Estatus,
+        Fecha
+    }
+
+
 
     public sealed class DataService
     {
@@ -192,6 +202,96 @@ namespace AsignacionPiezasApp.Services
                 };
             }
         }
+
+        // ============================
+        // NUEVO: consulta avanzada para informes (filtros opcionales + ordenación)
+        // ============================
+
+        public IEnumerable<AsignacionPieza> GetPiezasAdvanced(
+            string? codigoLike = null,
+            Guid? usuarioId = null,
+            Guid? estatusId = null,
+            DateTime? fechaDesde = null,
+            DateTime? fechaHasta = null,
+            string? descripcionLike = null,
+            ReportOrderBy orderBy = ReportOrderBy.Fecha,
+            bool orderDesc = true)
+        {
+            using var conn = Database.Open(); conn.Open();
+            using var cmd = conn.CreateCommand();
+
+            // LEFT JOIN para permitir ordenar por nombre de usuario/estatus
+            var sql = @"
+SELECT p.Codigo, p.Descripcion, p.UsuarioId, p.EstatusId, p.FotoPath, p.FechaRegistro,
+       u.Nombre AS UsuarioNombre, e.Nombre AS EstatusNombre
+FROM Piezas p
+LEFT JOIN Usuarios u ON u.Id = p.UsuarioId
+LEFT JOIN Estatus  e ON e.Id = p.EstatusId
+";
+
+            var where = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(codigoLike))
+            {
+                where.Add("p.Codigo LIKE $c");
+                cmd.Parameters.AddWithValue("$c", "%" + codigoLike + "%");
+            }
+            if (usuarioId is not null)
+            {
+                where.Add("p.UsuarioId = $u");
+                cmd.Parameters.AddWithValue("$u", usuarioId.ToString());
+            }
+            if (estatusId is not null)
+            {
+                where.Add("p.EstatusId = $e");
+                cmd.Parameters.AddWithValue("$e", estatusId.ToString());
+            }
+            if (!string.IsNullOrWhiteSpace(descripcionLike))
+            {
+                where.Add("p.Descripcion LIKE $d");
+                cmd.Parameters.AddWithValue("$d", "%" + descripcionLike + "%");
+            }
+            if (fechaDesde is not null)
+            {
+                where.Add("datetime(p.FechaRegistro) >= datetime($fd)");
+                cmd.Parameters.AddWithValue("$fd", fechaDesde.Value.ToString("s"));
+            }
+            if (fechaHasta is not null)
+            {
+                where.Add("datetime(p.FechaRegistro) <= datetime($fh)");
+                cmd.Parameters.AddWithValue("$fh", fechaHasta.Value.ToString("s"));
+            }
+
+            if (where.Count > 0)
+                sql += " WHERE " + string.Join(" AND ", where) + "\n";
+
+            string orderExpr = orderBy switch
+            {
+                ReportOrderBy.Codigo => "p.Codigo",
+                ReportOrderBy.Descripcion => "p.Descripcion",
+                ReportOrderBy.Usuario => "u.Nombre",
+                ReportOrderBy.Estatus => "e.Nombre",
+                _ => "datetime(p.FechaRegistro)"
+            };
+            sql += $" ORDER BY {orderExpr} {(orderDesc ? "DESC" : "ASC")}";
+
+            cmd.CommandText = sql;
+
+            using var rd = cmd.ExecuteReader();
+            while (rd.Read())
+            {
+                yield return new AsignacionPieza
+                {
+                    Codigo = rd.GetString(0),
+                    Descripcion = rd.IsDBNull(1) ? "" : rd.GetString(1),
+                    UsuarioId = rd.IsDBNull(2) ? null : Guid.Parse(rd.GetString(2)),
+                    EstatusId = rd.IsDBNull(3) ? null : Guid.Parse(rd.GetString(3)),
+                    FotoPath = rd.IsDBNull(4) ? null : rd.GetString(4),
+                    FechaRegistro = DateTime.Parse(rd.GetString(5))
+                };
+            }
+        }
+
 
         public AsignacionPieza? FindByCodigo(string codigo)
         {
